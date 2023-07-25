@@ -26,13 +26,15 @@ contract Avtars is Ownable, ERC721Enumerable {
     using Strings
     for uint256;
 
-    address public _token = 0xd9145CCE52D386f254917e481eB44e9943F39138; //busd
-    address public delegateAddress = 0x1856Cf49B13f3F7EAf3994fD1102347B50222902;
-    address public pancakeRouterAdress =
-        0x8954AfA98594b838bda56FE4C12a09D7739D179b;
-    address public token0 = 0xd9145CCE52D386f254917e481eB44e9943F39138; //busd
-    address public token1 = 0xf8e81D47203A594245E36C48e151709F0C19fBe8; //evc
     address[] usersMinted;
+    uint256[] levelsMinted;
+    uint256[] burnamount;
+
+    address public _token = 0xa9d281dA3B02DF2ffc8A1955c45d801B5726661D; //busd
+    address public delegateAddress = 0x1856Cf49B13f3F7EAf3994fD1102347B50222902;
+    address public pancakeRouterAdress = 0x8954AfA98594b838bda56FE4C12a09D7739D179b;
+    address public token0 = 0xa9d281dA3B02DF2ffc8A1955c45d801B5726661D; //busd
+    address public token1 = 0xB383cA5BCA79e69250eBEC1725892cb3b66E7f16; //evc
 
     uint256[8] costs = [
         100 ether,
@@ -45,7 +47,6 @@ contract Avtars is Ownable, ERC721Enumerable {
         50000 ether
     ];
     uint256[8] public NFT_Quantities = [10, 10, 10, 10, 10, 10, 10, 10];
-    uint256[] levelsMinted;
     uint256[8] testcost = [
         100 ether,
         200 ether,
@@ -70,6 +71,16 @@ contract Avtars is Ownable, ERC721Enumerable {
     mapping(address => address[]) referrals;
     mapping(address => bool)[8] public hasTokens;
     mapping(address => mapping(uint256 => uint256)) public mintUserDetails;
+    // mapping(uint256 => uint256) public evcBurnDetails;
+
+    struct BurnData {
+        uint256 cumulativeBurnAmount;
+        uint256 timestamp;
+    }
+
+    mapping(uint256 => BurnData) public evcBurnDetails;
+    uint256[] public evcBurnKeys;
+
     mapping(address => uint256) public userInvestment;
     mapping(address => uint256) public joinTimestamp;
     mapping(address => setRank) setUserRank;
@@ -78,6 +89,11 @@ contract Avtars is Ownable, ERC721Enumerable {
         address referrer;
         uint256 rank;
         uint256 percentage;
+    }
+
+    struct LevelMint {
+        uint256 level;
+        uint256 timestamp;
     }
 
     struct setRank {
@@ -92,6 +108,11 @@ contract Avtars is Ownable, ERC721Enumerable {
         string nftLevel;
         uint256 totalTeamSales;
     }
+
+    // struct BurnedTransaction {
+    // uint256 timestamp;
+    // uint256 amount;
+    // }
 
     Counters.Counter[8] public NFT_Counters;
 
@@ -125,8 +146,8 @@ contract Avtars is Ownable, ERC721Enumerable {
         bool _delegate,
         address _referrer
     ) public {
-        //can use this after testing
         uint256 level = _level - 1;
+        uint256 mintPrice = _mintPrice;
         require(level >= 0 && level <= 7, "Invalid NFT level");
         require(
             !hasTokens[level][msg.sender],
@@ -144,20 +165,20 @@ contract Avtars is Ownable, ERC721Enumerable {
             address indirectReferrer = getMyReferrer(_referrer);
             uint256 directReferralReward = requiredPrice / 10;
             uint256 indirectReferralReward = (requiredPrice * 5) / 100;
+            IERC20(_token).safeTransferFrom(
+                msg.sender,
+                address(this),
+                mintPrice
+            );
             if (_delegate) {
                 uint256 sharePrice = (requiredPrice * 10) / 100;
                 uint256 newMintPrice = requiredPrice + sharePrice;
                 require(
-                    _mintPrice >= newMintPrice,
+                    mintPrice >= newMintPrice,
                     "Insufficient payment amount; if delegate is true, add 10% more."
                 );
-                uint256 shareToDelegate = _mintPrice - requiredPrice;
+                uint256 shareToDelegate = mintPrice - requiredPrice;
                 if (indirectReferrer != address(0)) {
-                    IERC20(_token).safeTransferFrom(
-                        msg.sender,
-                        address(this),
-                        _mintPrice
-                    );
                     IERC20(_token).transfer(delegateAddress, shareToDelegate);
                     IERC20(_token).transfer(
                         indirectReferrer,
@@ -173,11 +194,6 @@ contract Avtars is Ownable, ERC721Enumerable {
                         indirectReferralReward
                     );
                 } else if (directReferrer != address(0)) {
-                    IERC20(_token).safeTransferFrom(
-                        msg.sender,
-                        address(this),
-                        _mintPrice
-                    );
                     IERC20(_token).transfer(delegateAddress, shareToDelegate);
                     IERC20(_token).transfer(
                         directReferrer,
@@ -189,34 +205,19 @@ contract Avtars is Ownable, ERC721Enumerable {
                         directReferralReward
                     );
                 } else {
-                    IERC20(_token).safeTransferFrom(
-                        msg.sender,
-                        address(this),
-                        _mintPrice
-                    );
                     IERC20(_token).transfer(delegateAddress, shareToDelegate);
                 }
             } else {
                 require(
-                    _mintPrice >= requiredPrice,
+                    mintPrice >= requiredPrice,
                     "Insufficient payment amount"
                 );
                 if (indirectReferrer != address(0)) {
-                    IERC20(_token).safeTransferFrom(
-                        msg.sender,
-                        address(this),
-                        _mintPrice
-                    );
                     IERC20(_token).transfer(
                         indirectReferrer,
                         indirectReferralReward
                     );
                     IERC20(_token).transfer(
-                        directReferrer,
-                        directReferralReward
-                    );
-                    emit directReferralRewardTransferred(
-                        msg.sender,
                         directReferrer,
                         directReferralReward
                     );
@@ -226,11 +227,6 @@ contract Avtars is Ownable, ERC721Enumerable {
                         indirectReferralReward
                     );
                 } else if (directReferrer != address(0)) {
-                    IERC20(_token).safeTransferFrom(
-                        msg.sender,
-                        address(this),
-                        _mintPrice
-                    );
                     IERC20(_token).transfer(
                         directReferrer,
                         directReferralReward
@@ -240,16 +236,9 @@ contract Avtars is Ownable, ERC721Enumerable {
                         directReferrer,
                         directReferralReward
                     );
-                } else {
-                    IERC20(_token).safeTransferFrom(
-                        msg.sender,
-                        address(this),
-                        _mintPrice
-                    );
                 }
             }
         }
-        busdAndEvcRB(msg.sender, requiredPrice);
         NFT_Counters[level].increment();
         uint256 tokenId = NFT_Counters[level].current();
         userInvestment[msg.sender] += requiredPrice;
@@ -258,31 +247,21 @@ contract Avtars is Ownable, ERC721Enumerable {
         usersMinted.push(msg.sender);
         levelsMinted.push(_level);
         mintUserDetails[msg.sender][_level] = block.timestamp;
+        // buyandBurnPerc(15, requiredPrice);
     }
 
-    function busdAndEvcRB(address _user, uint256 _mintAmount) public {
-        address[] memory path = new address[](2);
-        path[0] = token0;
-        path[1] = token1;
-        uint256 deadline = block.timestamp + 5000;
-        AddressRank[] memory referralBonusList = getUserRankBonus(_user);
-        IERC20(token0).approve(pancakeRouterAdress, _mintAmount);
-        for (uint256 i = 0; i < referralBonusList.length; i++) {
-            address referrer = referralBonusList[i].referrer;
-            uint256 percentageTransfer = referralBonusList[i].percentage;
-            uint256 transferableAmount = (_mintAmount * percentageTransfer) /
-                100;
-            uint256 evcTransferAmount = (transferableAmount * 25) / 100;
-            uint256 busdTransferAmount = (transferableAmount * 75) / 100;
-            IPancakeRouter(pancakeRouterAdress).swapExactTokensForTokens(
-                evcTransferAmount,
-                0,
-                path,
-                referrer,
-                deadline
-            );
-            IERC20(_token).transfer(referrer, busdTransferAmount);
-        }
+    function mintNFT1(
+        uint256 _level,
+        uint256 _mintPrice,
+        bool _delegate,
+        address _referrer,
+        address[] memory rbmembers,
+        uint256[] memory rbpercentages
+    ) public {
+        mintNFT(_level, _mintPrice, _delegate, _referrer);
+        uint256 requiredPrice = costs[_level - 1];
+        busdAndEvcRB(rbmembers, rbpercentages, requiredPrice);
+        buyandBurnPerc(15, requiredPrice);
     }
 
     //View
@@ -337,6 +316,29 @@ contract Avtars is Ownable, ERC721Enumerable {
         if (hasTokens[0][_user] && teamsale >= 100 ether) {
             return 1;
         }
+    }
+
+    function getMintedLevelsByTime(
+        address user,
+        uint256 timeFrom,
+        uint256 timeTo
+    ) public view returns(LevelMint[] memory) {
+        require(timeFrom <= timeTo, "Invalid time range");
+        LevelMint[] memory levels = new LevelMint[](8);
+        uint256 count = 0;
+        for (uint256 i = 1; i <= 8; i++) {
+            uint256 timeMinted = mintUserDetails[user][i];
+            if (timeMinted >= timeFrom && timeMinted <= timeTo) {
+                LevelMint memory mint = LevelMint(i, timeMinted);
+                levels[count] = mint;
+                count++;
+            }
+        }
+        LevelMint[] memory result = new LevelMint[](count);
+        for (uint256 i = 0; i < count; i++) {
+            result[i] = levels[i];
+        }
+        return result;
     }
 
     function getMyReferrer(address _user) public view returns(address) {
@@ -478,36 +480,6 @@ contract Avtars is Ownable, ERC721Enumerable {
         return finalAddressRanks;
     }
 
-    function getUsersByMintTime(uint256 timeFrom, uint256 timeTo)
-    public
-    view
-    returns(address[] memory, uint256[] memory) {
-        address[] memory users = usersMinted;
-        uint256[] memory levels = levelsMinted;
-        uint256 count = 0;
-        address[] memory filteredUsers = new address[](users.length);
-        uint256[] memory filteredLevels = new uint256[](levels.length);
-        for (uint256 i = 0; i < users.length; i++) {
-            address user = users[i];
-            uint256 level = levels[i];
-            if (
-                mintUserDetails[user][level] >= timeFrom &&
-                mintUserDetails[user][level] <= timeTo
-            ) {
-                filteredUsers[count] = user;
-                filteredLevels[count] = level;
-                count++;
-            }
-        }
-        address[] memory finalUsers = new address[](count);
-        uint256[] memory finalLevels = new uint256[](count);
-        for (uint256 i = 0; i < count; i++) {
-            finalUsers[i] = filteredUsers[i];
-            finalLevels[i] = filteredLevels[i];
-        }
-        return (finalUsers, finalLevels);
-    }
-
     function recentlyJoined(address _account)
     public
     view
@@ -610,6 +582,67 @@ contract Avtars is Ownable, ERC721Enumerable {
     }
 
     //Internal
+    function busdAndEvcRB(
+        address[] memory _persons,
+        uint256[] memory RBpercentages,
+        uint256 _mintAmount
+    ) internal {
+        address[] memory path = new address[](2);
+        path[0] = token0;
+        path[1] = token1;
+        uint256 deadline = block.timestamp + 5000;
+        address[] memory referralBonusList = _persons;
+        uint256[] memory referralBonuspercentagesList = RBpercentages;
+        IERC20(token0).approve(pancakeRouterAdress, _mintAmount);
+        for (uint256 i = 0; i < referralBonusList.length; i++) {
+            address referrer = referralBonusList[i];
+            uint256 percentageTransfer = referralBonuspercentagesList[i];
+            uint256 transferableAmount = (_mintAmount * percentageTransfer) /
+                100;
+            uint256 evcTransferAmount = (transferableAmount * 25) / 100;
+            uint256 busdTransferAmount = (transferableAmount * 75) / 100;
+            IPancakeRouter(pancakeRouterAdress).swapExactTokensForTokens(
+                evcTransferAmount,
+                0,
+                path,
+                referrer,
+                deadline
+            );
+            IERC20(_token).transfer(referrer, busdTransferAmount);
+        }
+    }
+
+    function buyandBurnPerc(uint256 _perc, uint256 _mintAmount) internal {
+        uint256 evcTransferAmount = (_perc * _mintAmount) / 100;
+        address[] memory path = new address[](2);
+        path[0] = token0;
+        path[1] = token1;
+        // uint256 deadline = block.timestamp + 5000;
+        address deadAddress = 0x000000000000000000000000000000000000dEaD;
+        IERC20(token0).approve(pancakeRouterAdress, _mintAmount);
+        // IPancakeRouter(pancakeRouterAdress).swapExactTokensForTokens(evcTransferAmount, 0, path, deadAddress, deadline);
+        IERC20(_token).transfer(deadAddress, evcTransferAmount);
+        BurnData memory burnData = BurnData(evcTransferAmount, block.timestamp);
+        evcBurnDetails[block.timestamp] = burnData;
+        evcBurnKeys.push(block.timestamp);
+    }
+
+    function getTotalBurnByTime(uint256 timeFrom, uint256 timeTo)
+    public
+    view
+    returns(uint256) {
+        require(timeFrom <= timeTo, "Invalid time range");
+
+        uint256 totalBurn = 0;
+        for (uint256 i = 0; i < evcBurnKeys.length; i++) {
+            uint256 key = evcBurnKeys[i];
+            if (key >= timeFrom && key <= timeTo) {
+                totalBurn += evcBurnDetails[key].cumulativeBurnAmount;
+            }
+        }
+        return totalBurn;
+    }
+
     function filterFunction(address _account)
     internal
     view
@@ -645,6 +678,36 @@ contract Avtars is Ownable, ERC721Enumerable {
             }
         }
         return false;
+    }
+
+    function getUsersByMintTime(uint256 timeFrom, uint256 timeTo)
+    public
+    view
+    returns(address[] memory, uint256[] memory) {
+        address[] memory users = usersMinted;
+        uint256[] memory levels = levelsMinted;
+        uint256 count = 0;
+        address[] memory filteredUsers = new address[](users.length);
+        uint256[] memory filteredLevels = new uint256[](levels.length);
+        for (uint256 i = 0; i < users.length; i++) {
+            address user = users[i];
+            uint256 level = levels[i];
+            if (
+                mintUserDetails[user][level] >= timeFrom &&
+                mintUserDetails[user][level] <= timeTo
+            ) {
+                filteredUsers[count] = user;
+                filteredLevels[count] = level;
+                count++;
+            }
+        }
+        address[] memory finalUsers = new address[](count);
+        uint256[] memory finalLevels = new uint256[](count);
+        for (uint256 i = 0; i < count; i++) {
+            finalUsers[i] = filteredUsers[i];
+            finalLevels[i] = filteredLevels[i];
+        }
+        return (finalUsers, finalLevels);
     }
 
     function getTeamAddresses(address _user)
@@ -752,6 +815,12 @@ contract Avtars is Ownable, ERC721Enumerable {
     }
 
     //Admin
+    function buyandBurnPercAdmin(uint256 _perc, uint256 _mintAmount)
+    public
+    onlyOwner {
+        buyandBurnPerc(_perc, _mintAmount);
+    }
+
     function pause(bool _state) public onlyOwner {
         paused = _state;
     }
